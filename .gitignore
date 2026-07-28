@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+
+# Local Large Datasets & Model Weights
+models/*.pth
+models/*.onnx
+models/*.trt
+*.rec
+*.idx
+*.bin
+archive/
+archive (*/
+archive*/
+big dataset*/
+glint360k*/
+
+# System Logs & System Generated Files
+.system_generated/
+*.log
+scratch/*.csv
+
+# Build Output
+dist/
+build/
+.env
+.DS_Store
+Thumbs.db
