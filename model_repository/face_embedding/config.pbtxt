@@ -22,7 +22,7 @@ instance_group [
   {
     count: 2
     kind: KIND_GPU
-    gpus: [0]
+    gpus: [0, 1]
   }
 ]
 
@@ -30,3 +30,18 @@ dynamic_batching {
   preferred_batch_size: [4, 8, 16, 32]
   max_queue_delay_microseconds: 5000
 }
+
+model_warmup [
+  {
+    name: "gpu_warmup"
+    batch_size: 8
+    inputs {
+      key: "input"
+      value {
+        data_type: TYPE_FP32
+        dims: [3, 160, 160]
+        zero_data: true
+      }
+    }
+  }
+]
