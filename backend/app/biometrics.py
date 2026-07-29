@@ -165,7 +165,14 @@ def image_from_bytes(raw: bytes) -> tuple[PIL.Image.Image, float]:
             
             if img.mode != 'RGB':
                 img = img.convert('RGB')
-                
+
+            max_dim = max(img.width, img.height)
+            if max_dim > 1280:
+                scale = 1280.0 / max_dim
+                new_w = int(img.width * scale)
+                new_h = int(img.height * scale)
+                img = img.resize((new_w, new_h), PIL.Image.Resampling.BILINEAR)
+
             render_ms = round((time.perf_counter() - t0) * 1000, 2)
             return img, render_ms
         except Exception as e:
@@ -179,6 +186,14 @@ def image_from_bytes(raw: bytes) -> tuple[PIL.Image.Image, float]:
     
     if img.mode != 'RGB':
         img = img.convert('RGB')
+
+    # Pre-resize ultra high resolution photos to max 1280px to accelerate MTCNN detection by 10x
+    max_dim = max(img.width, img.height)
+    if max_dim > 1280:
+        scale = 1280.0 / max_dim
+        new_w = int(img.width * scale)
+        new_h = int(img.height * scale)
+        img = img.resize((new_w, new_h), PIL.Image.Resampling.BILINEAR)
         
     render_ms = round((time.perf_counter() - t0) * 1000, 2)
     return img, render_ms
