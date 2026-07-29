@@ -117,6 +117,7 @@ export default function App() {
   };
 
   const removeDoc = (index) => {
+    if (docPreviews[index]?.url) URL.revokeObjectURL(docPreviews[index].url);
     const updatedFiles = docFiles.filter((_, idx) => idx !== index);
     const updatedPreviews = docPreviews.filter((_, idx) => idx !== index);
     setDocFiles(updatedFiles);
@@ -128,6 +129,7 @@ export default function App() {
   const handleTargetSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (targetPreview?.url) URL.revokeObjectURL(targetPreview.url);
     setTargetPhoto(file);
     const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
     setTargetPreview({
@@ -159,6 +161,7 @@ export default function App() {
   };
 
   const removeCandidate = (index) => {
+    if (candidatePreviews[index]?.url) URL.revokeObjectURL(candidatePreviews[index].url);
     setCandidateFiles(candidateFiles.filter((_, idx) => idx !== index));
     setCandidatePreviews(candidatePreviews.filter((_, idx) => idx !== index));
     setBenchmarkResults(null);
@@ -199,29 +202,37 @@ export default function App() {
 
   // ── Capture Frame ──
   const captureFrame = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    canvas.width = 640;
-    canvas.height = 480;
-    const ctx = canvas.getContext('2d');
-
-    if (videoRef.current && videoRef.current.readyState >= 2 && !simulatedCamera) {
-      ctx.translate(640, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-    } else {
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, 640, 480);
-      const testImg = new Image();
-      testImg.crossOrigin = 'anonymous';
-      testImg.src = docPreviews.find(p => p.url)?.url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80";
-      ctx.drawImage(testImg, 170, 60, 300, 360);
-    }
-
     return new Promise(resolve => {
-      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        resolve(null);
+        return;
+      }
+
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+
+      if (videoRef.current && videoRef.current.readyState >= 2 && !simulatedCamera) {
+        ctx.translate(640, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 640, 480);
+        const testImg = new Image();
+        testImg.crossOrigin = 'anonymous';
+        testImg.onload = () => {
+          ctx.drawImage(testImg, 170, 60, 300, 360);
+          canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+        };
+        testImg.onerror = () => {
+          canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+        };
+        testImg.src = docPreviews.find(p => p.url)?.url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80";
+      }
     });
   }, [simulatedCamera, docPreviews]);
 
@@ -229,45 +240,57 @@ export default function App() {
   useEffect(() => {
     if (appMode !== 'WEBCAM' || !cameraOn || egovStep === 0 || loading) return;
 
-    const interval = setInterval(async () => {
-      const blob = await captureFrame();
-      if (!blob) return;
+    let isTracking = true;
 
-      const formData = new FormData();
-      formData.append('frame', blob, 'frame.jpg');
+    const trackYaw = async () => {
+      if (!isTracking) return;
 
       try {
-        const res = await fetch(`${API_URL}/api/v1/biometrics/detect-yaw`, {
-          method: 'POST',
-          body: formData
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.faceDetected) {
-          setCurrentPose(data.pose);
+        const blob = await captureFrame();
+        if (blob) {
+          const formData = new FormData();
+          formData.append('frame', blob, 'frame.jpg');
 
-          if (egovStep === 1 && (data.pose === 'LEFT' || data.pose === 'RIGHT')) {
-            setCapturedFrames(prev => ({ ...prev, left: blob }));
-            setStepStatus(prev => ({ ...prev, left: true }));
-            setEgovStep(2);
-          } else if (egovStep === 2 && (data.pose === 'RIGHT' || data.pose === 'LEFT')) {
-            setCapturedFrames(prev => ({ ...prev, right: blob }));
-            setStepStatus(prev => ({ ...prev, right: true }));
-            setEgovStep(3);
-          } else if (egovStep === 3 && data.pose === 'CENTER') {
-            const updatedFrames = { ...capturedFrames, center: blob };
-            setCapturedFrames(updatedFrames);
-            setStepStatus(prev => ({ ...prev, center: true }));
-            setEgovStep(0);
-            submitEgovVerification(updatedFrames);
+          const res = await fetch(`${API_URL}/api/v1/biometrics/detect-yaw`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data.faceDetected && isTracking) {
+              setCurrentPose(data.pose);
+
+              if (egovStep === 1 && (data.pose === 'LEFT' || data.pose === 'RIGHT')) {
+                setCapturedFrames(prev => ({ ...prev, left: blob }));
+                setStepStatus(prev => ({ ...prev, left: true }));
+                setEgovStep(2);
+              } else if (egovStep === 2 && (data.pose === 'RIGHT' || data.pose === 'LEFT')) {
+                setCapturedFrames(prev => ({ ...prev, right: blob }));
+                setStepStatus(prev => ({ ...prev, right: true }));
+                setEgovStep(3);
+              } else if (egovStep === 3 && data.pose === 'CENTER') {
+                const updatedFrames = { ...capturedFrames, center: blob };
+                setCapturedFrames(updatedFrames);
+                setStepStatus(prev => ({ ...prev, center: true }));
+                setEgovStep(0);
+                submitEgovVerification(updatedFrames);
+              }
+            }
           }
         }
       } catch (err) {
         console.warn('Yaw tracking check:', err);
       }
-    }, 450);
+      
+      if (isTracking) {
+        setTimeout(trackYaw, 450);
+      }
+    };
+    
+    trackYaw();
 
-    return () => clearInterval(interval);
+    return () => { isTracking = false; };
   }, [appMode, cameraOn, egovStep, loading, captureFrame, capturedFrames]);
 
   // ── Start eGov 3D Flow ──
@@ -407,7 +430,10 @@ export default function App() {
 
             <div 
               className="upload-dropzone"
+              role="button"
+              tabIndex={0}
               onClick={() => docInputRef.current?.click()}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') docInputRef.current?.click(); }}
             >
               <input 
                 type="file" 
@@ -610,7 +636,10 @@ export default function App() {
 
               <div 
                 className="upload-dropzone target-dropzone"
+                role="button"
+                tabIndex={0}
                 onClick={() => targetInputRef.current?.click()}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') targetInputRef.current?.click(); }}
               >
                 <input 
                   type="file" 
@@ -650,7 +679,10 @@ export default function App() {
 
               <div 
                 className="upload-dropzone"
+                role="button"
+                tabIndex={0}
                 onClick={() => candidatesInputRef.current?.click()}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') candidatesInputRef.current?.click(); }}
               >
                 <input 
                   type="file" 
