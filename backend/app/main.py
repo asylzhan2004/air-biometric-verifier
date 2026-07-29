@@ -128,6 +128,8 @@ async def search_multi_documents(
     # Extract live frame embedding ONCE before search loop (1 pass instead of N passes!)
     try:
         live_full, live_upper, quality_live, timing_live, df_live = extract_dual_embeddings(live_bytes, is_document=False)
+        yaw_meta = estimate_head_yaw(live_bytes)
+        yaw_ratio = yaw_meta.get("yawRatio", 0.0)
     except Exception as err:
         raise HTTPException(400, f"Ошибка обработки снимка с камеры: {str(err)}")
 
@@ -138,7 +140,11 @@ async def search_multi_documents(
             
             full_sim = float(np.clip(np.dot(doc_full, live_full), 0.0, 1.0))
             upper_sim = float(np.clip(np.dot(doc_upper, live_upper), 0.0, 1.0))
-            fused_sim = max(full_sim, 0.40 * full_sim + 0.60 * upper_sim)
+
+            yaw_factor = min(1.0, abs(yaw_ratio) / 0.35)
+            periocular_weight = 0.60 + 0.25 * yaw_factor
+            full_weight = 1.0 - periocular_weight
+            fused_sim = max(full_sim, full_weight * full_sim + periocular_weight * upper_sim)
 
             # Audit quality & security
             q_pair = (quality_doc["overallQuality"] + quality_live["overallQuality"]) / 2.0
@@ -148,7 +154,7 @@ async def search_multi_documents(
                 q_ok = True
 
             adaptive_thresh = STRICT_LOW_QUALITY_THRESHOLD if q_pair < QUALITY_STRICT_ZONE else BASE_THRESHOLD
-            df_det = df_doc.get("deepfakeDetected", False) or df_live.get("deepfakeDetected", False)
+            df_det = df_doc.get("isDeepfake", False) or df_live.get("isDeepfake", False)
             conf = calculate_confidence(fused_sim, adaptive_thresh)
 
             quality_audit = {
