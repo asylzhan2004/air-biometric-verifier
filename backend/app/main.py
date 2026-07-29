@@ -224,11 +224,11 @@ async def search_multi_documents(
 
     for item in raw_scores:
         thresh = item.get("adaptiveThreshold", BASE_THRESHOLD)
-        is_matched = (item.get("rawSimilarity", 0.0) >= thresh) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
-        is_best = (item["index"] == best_idx) and is_matched
+        is_valid = (item.get("rawSimilarity", 0.0) >= thresh) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
+        is_best = (item["index"] == best_idx) and is_valid
         res_item = {
             **item,
-            "matched": is_matched,
+            "matched": is_best,  # Only 1 single 1st place best match is marked matched=True
             "isBestMatch": is_best
         }
         document_results.append(res_item)

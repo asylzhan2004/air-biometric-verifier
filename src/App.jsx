@@ -687,7 +687,7 @@ export default function App() {
                         {scoreObj && (
                           <div className="score-details">
                             <span className={`match-tag ${scoreObj.matched ? 'matched' : 'mismatch'}`}>
-                              {scoreObj.matched ? `✓ СВОЙ (${(scoreObj.rawSimilarity * 100).toFixed(1)}%)` : `✕ ЧУЖОЙ (${(scoreObj.rawSimilarity * 100).toFixed(1)}%)`}
+                              {scoreObj.matched ? `✓ СВОЙ (Sim: ${(scoreObj.rawSimilarity * 100).toFixed(1)}%)` : `✕ ЧУЖОЙ (Sim: ${(scoreObj.rawSimilarity * 100).toFixed(1)}%)`}
                             </span>
                             {scoreObj.isBestMatch && <span className="best-badge">⭐ 1-Е МЕСТО</span>}
                           </div>
