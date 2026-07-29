@@ -8,6 +8,7 @@ Endpoints:
 - POST /api/v1/biometrics/egov-verify (eGov interactive 3D head-turn liveness)
 """
 import time
+import numpy as np
 from typing import List
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +16,12 @@ from .biometrics import (
     estimate_head_yaw,
     calculate_beard_invariant_similarity,
     process_egov_3d_liveness,
-    cosine_similarity
+    cosine_similarity,
+    extract_dual_embeddings,
+    QUALITY_FLOOR,
+    QUALITY_STRICT_ZONE,
+    STRICT_LOW_QUALITY_THRESHOLD,
+    BASE_THRESHOLD
 )
 
 app = FastAPI(title="Air Biometric Verifier (Anti-DeepFake 96.48% & Security Floor)", version="14.0.0")
@@ -159,6 +165,7 @@ async def search_multi_documents(
             else:
                 df_det = df_doc.get("isDeepfake", False) or df_live.get("isDeepfake", False)
 
+            adaptive_thresh = STRICT_LOW_QUALITY_THRESHOLD if q_pair < QUALITY_STRICT_ZONE else BASE_THRESHOLD
             conf = calculate_confidence(fused_sim, adaptive_thresh)
 
             quality_audit = {
@@ -200,12 +207,14 @@ async def search_multi_documents(
                 best_df_detected = df_det
                 best_profiling = profiling_breakdown
         except Exception as err:
+            print(f"[SEARCH ERROR] {doc_file.filename}: {err}")
             raw_scores.append({
                 "index": idx,
                 "filename": doc_file.filename,
                 "error": str(err),
                 "rawSimilarity": 0.0,
                 "confidenceScore": 0.0,
+                "adaptiveThreshold": BASE_THRESHOLD,
                 "qualityFloorPassed": False,
                 "deepfakeDetected": False
             })
@@ -214,7 +223,8 @@ async def search_multi_documents(
     best_match_obj = None
 
     for item in raw_scores:
-        is_matched = (item["rawSimilarity"] >= item["adaptiveThreshold"]) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
+        thresh = item.get("adaptiveThreshold", BASE_THRESHOLD)
+        is_matched = (item.get("rawSimilarity", 0.0) >= thresh) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
         is_best = (item["index"] == best_idx) and is_matched
         res_item = {
             **item,
