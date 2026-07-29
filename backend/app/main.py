@@ -214,16 +214,18 @@ async def search_multi_documents(
     best_match_obj = None
 
     for item in raw_scores:
-        is_best = (item["index"] == best_idx) and (item["rawSimilarity"] >= best_adaptive_thresh) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
+        is_matched = (item["rawSimilarity"] >= item["adaptiveThreshold"]) and item.get("qualityFloorPassed", False) and not item.get("deepfakeDetected", False)
+        is_best = (item["index"] == best_idx) and is_matched
         res_item = {
             **item,
-            "matched": is_best
+            "matched": is_matched,
+            "isBestMatch": is_best
         }
         document_results.append(res_item)
         if is_best:
             best_match_obj = res_item
 
-    matched = best_match_obj is not None
+    matched = best_match_obj is not None or any(d["matched"] for d in document_results)
     elapsed_ms = round((time.time() - t0) * 1000, 1)
 
     if best_df_detected:

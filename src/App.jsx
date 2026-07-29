@@ -670,7 +670,7 @@ export default function App() {
                   const scoreObj = benchmarkResults?.allDocumentScores?.find(s => s.index === idx);
 
                   return (
-                    <div key={idx} className={`doc-card ${scoreObj?.matched ? 'best-match' : ''}`}>
+                    <div key={idx} className={`doc-card ${scoreObj?.isBestMatch ? 'best-match' : scoreObj?.matched ? 'matched-doc' : ''}`}>
                       <button className="remove-btn" onClick={() => removeCandidate(idx)}>✕</button>
                       <div className="doc-thumbnail">
                         {prev.isPdf ? (
@@ -687,9 +687,9 @@ export default function App() {
                         {scoreObj && (
                           <div className="score-details">
                             <span className={`match-tag ${scoreObj.matched ? 'matched' : 'mismatch'}`}>
-                              {scoreObj.matched ? `✓ СВОЙ (${scoreObj.confidenceScore}%)` : `✕ ЧУЖОЙ (${scoreObj.confidenceScore}%)`}
+                              {scoreObj.matched ? `✓ СВОЙ (${(scoreObj.rawSimilarity * 100).toFixed(1)}%)` : `✕ ЧУЖОЙ (${(scoreObj.rawSimilarity * 100).toFixed(1)}%)`}
                             </span>
-                            <span className="raw-sim">Sim: {(scoreObj.rawSimilarity * 100).toFixed(1)}%</span>
+                            {scoreObj.isBestMatch && <span className="best-badge">⭐ 1-Е МЕСТО</span>}
                           </div>
                         )}
                       </div>
