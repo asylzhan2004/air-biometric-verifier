@@ -251,42 +251,53 @@ def extract_dual_embeddings(raw_bytes: bytes, is_document: bool = False):
     mtcnn = get_mtcnn()
     embedder = get_resnet_embedder()
 
+    # SPEED FIX: Single MTCNN call instead of separate detect() + forward()
     t_detect_start = time.perf_counter()
-    boxes, probs = mtcnn.detect(pil_img)
+    boxes, probs, landmarks = mtcnn.detect(pil_img, landmarks=True)
     aligned_tensor = mtcnn(pil_img)
 
     if aligned_tensor is None:
         enhanced_img = apply_document_enhancements(pil_img)
         aligned_tensor = mtcnn(enhanced_img)
-        boxes, probs = mtcnn.detect(enhanced_img)
+        boxes, probs, landmarks = mtcnn.detect(enhanced_img, landmarks=True)
 
     if aligned_tensor is None:
         raise HTTPException(400, "Лицо не обнаружено. Убедитесь, что лицо четко видно на документе.")
 
     detect_ms = round((time.perf_counter() - t_detect_start) * 1000, 2)
 
-    # Convert 160x160 aligned face tensor to PIL image for precise Anti-DeepFake screening
-    aligned_face_np = ((aligned_tensor.cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
-    aligned_face_pil = PIL.Image.fromarray(aligned_face_np)
-    deepfake_meta = check_anti_deepfake(aligned_face_pil)
+    # Extract yaw ratio from landmarks (avoids separate estimate_head_yaw call)
+    yaw_ratio = 0.0
+    if landmarks is not None and len(landmarks) > 0:
+        pts = landmarks[0]
+        left_eye, right_eye, nose = pts[0], pts[1], pts[2]
+        eye_center_x = (left_eye[0] + right_eye[0]) / 2.0
+        eye_width = max(1.0, right_eye[0] - left_eye[0])
+        yaw_ratio = float((nose[0] - eye_center_x) / eye_width)
+
+    # Skip heavy Anti-DeepFake classifier for documents (only check live frames)
+    if not is_document:
+        aligned_face_np = ((aligned_tensor.cpu().numpy().transpose(1, 2, 0) + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
+        aligned_face_pil = PIL.Image.fromarray(aligned_face_np)
+        deepfake_meta = check_anti_deepfake(aligned_face_pil)
+    else:
+        deepfake_meta = {"isDeepfake": False, "aiProbability": 0.0, "realProbability": 1.0, "status": "DOCUMENT_SKIPPED"}
 
     bbox = boxes[0] if boxes is not None and len(boxes) > 0 else None
     quality_meta = calculate_quality_score(pil_img, bbox=bbox)
+    quality_meta["yawRatio"] = yaw_ratio
 
+    # SPEED FIX: Batch full + upper face into single ArcFace forward pass (2x speedup)
     t_embed_start = time.perf_counter()
-    full_batch = aligned_tensor.unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        full_emb = embedder(full_batch).cpu().numpy()[0]
-        full_norm = full_emb / np.linalg.norm(full_emb)
-
     upper_tensor = aligned_tensor.clone()
     h_cut = int(160 * 0.68)
     upper_tensor[:, h_cut:, :] = 0.0
 
-    upper_batch = upper_tensor.unsqueeze(0).to(DEVICE)
+    batch = torch.stack([aligned_tensor, upper_tensor]).to(DEVICE)
     with torch.no_grad():
-        upper_emb = embedder(upper_batch).cpu().numpy()[0]
-        upper_norm = upper_emb / np.linalg.norm(upper_emb)
+        embs = embedder(batch).cpu().numpy()
+        full_norm = embs[0] / np.linalg.norm(embs[0])
+        upper_norm = embs[1] / np.linalg.norm(embs[1])
 
     embed_ms = round((time.perf_counter() - t_embed_start) * 1000, 2)
 

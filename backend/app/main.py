@@ -134,8 +134,7 @@ async def search_multi_documents(
     # Extract live frame embedding ONCE before search loop (1 pass instead of N passes!)
     try:
         live_full, live_upper, quality_live, timing_live, df_live = extract_dual_embeddings(live_bytes, is_document=False)
-        yaw_meta = estimate_head_yaw(live_bytes)
-        yaw_ratio = yaw_meta.get("yawRatio", 0.0)
+        yaw_ratio = quality_live.get("yawRatio", 0.0)
     except Exception as err:
         raise HTTPException(400, f"Ошибка обработки снимка с камеры: {str(err)}")
 
