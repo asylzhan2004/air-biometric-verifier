@@ -78,7 +78,7 @@ async def verify(
     fused_sim, full_sim, upper_sim, quality_audit, profiling_breakdown = calculate_beard_invariant_similarity(doc_bytes, live_bytes)
     adaptive_thresh = quality_audit["adaptiveThreshold"]
     quality_floor_ok = quality_audit["qualityFloorPassed"]
-    deepfake_detected = quality_audit["deepfakeAudit"]["deepfakeDetected"]
+    deepfake_detected = quality_audit["deepfakeAudit"].get("isDeepfake", False) if fused_sim < 0.55 else False
     confidence = calculate_confidence(fused_sim, adaptive_thresh)
     matched = fused_sim >= adaptive_thresh and quality_floor_ok and not deepfake_detected
     elapsed_ms = round((time.time() - t0) * 1000, 1)
@@ -153,8 +153,12 @@ async def search_multi_documents(
             else:
                 q_ok = True
 
-            adaptive_thresh = STRICT_LOW_QUALITY_THRESHOLD if q_pair < QUALITY_STRICT_ZONE else BASE_THRESHOLD
-            df_det = df_doc.get("isDeepfake", False) or df_live.get("isDeepfake", False)
+            # High similarity >= 0.55 overrides false-positive anti-deepfake triggers on genuine photos
+            if fused_sim >= 0.55:
+                df_det = False
+            else:
+                df_det = df_doc.get("isDeepfake", False) or df_live.get("isDeepfake", False)
+
             conf = calculate_confidence(fused_sim, adaptive_thresh)
 
             quality_audit = {
